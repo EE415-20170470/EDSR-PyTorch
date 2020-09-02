@@ -1,10 +1,12 @@
 import os
 from importlib import import_module
 
+import time
 import torch
 import torch.nn as nn
 import torch.nn.parallel as P
 import torch.utils.model_zoo
+from torchsummary import summary
 
 class Model(nn.Module):
     def __init__(self, args, ckp):
@@ -101,6 +103,28 @@ class Model(nn.Module):
 
         if load_from:
             self.model.load_state_dict(load_from, strict=False)
+            cmodel = nn.DataParallel(self.model)
+            #cmodel = self.model
+            #hostInputBuffer = torch.randn(1, 3, 270, 480) # C*H*W
+            hostInputBuffer = torch.randn(1, 3, 360, 640)
+            deviceInputBuffer = hostInputBuffer.to(self.device)
+            #hostInputBuffer = torch.randn(1, 3, 540, 960)
+
+            #summary(cmodel, (3, 270, 480))
+
+            with torch.set_grad_enabled(False):
+                print("Start bench!")
+                starttime = time.time()
+                #for _ in range(24*900):
+                for _ in range(24*300):
+                #for _ in range(24*100):
+                    #deviceInputBuffer = hostInputBuffer.to(self.device)
+                    deviceOutputBuffer = cmodel(deviceInputBuffer)
+                    #hostOutputBuffer = deviceOutputBuffer.to('cpu')
+                print("End bench:", time.time() - starttime)
+
+            deviceBuffer = hostInputBuffer.to(self.device)
+            torch.onnx.export(self.model, deviceBuffer, "../onnx/edsr_F1.onnx")
 
     def forward_chop(self, *args, shave=10, min_size=160000):
         scale = 1 if self.input_large else self.scale[self.idx_scale]
